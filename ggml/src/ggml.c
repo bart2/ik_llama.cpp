@@ -25152,6 +25152,14 @@ int ggml_cpu_has_avx512_bf16(void) {
 #endif
 }
 
+int ggml_cpu_has_amx_int8(void) {
+#if defined(__AMX_INT8__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 int ggml_cpu_has_fma(void) {
 #if defined(__FMA__)
     return 1;
@@ -25315,5 +25323,6 @@ int ggml_cpu_has_matmul_int8(void) {
     return 0;
 #endif
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
