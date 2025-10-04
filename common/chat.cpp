@@ -1862,7 +1862,7 @@ static void common_chat_parse_glm_4_5(common_chat_msg_parser & builder) {
                 return;
             }
         }
-        LOG_DBG("Failed to parse partial GLM 4.5 tool call, fallback to non-partial: %s\n", tool_str.c_str());
+        LOG("Failed to parse partial GLM 4.5 tool call, fallback to non-partial: %s\n", tool_str.c_str());
     };
 
     // GLM 4.5 uses format: <tool_call>function_name\n<arg_key>key</arg_key>\n<arg_value>value</arg_value>\n</tool_call>
@@ -2003,7 +2003,7 @@ static void common_chat_parse_glm_4_5(common_chat_msg_parser & builder) {
                 builder.consume_spaces();
                 if (builder.pos() == builder.input().size()) {
                     gen_partial_args([&](auto &&, auto &&needle){arguments[key] = needle;});
-                    LOG_DBG("GLM 4.5 partial JSON arg_value: %s\n", value_json->json.dump().c_str());
+                    LOG("GLM 4.5 partial JSON arg_value: %s\n", value_json->json.dump().c_str());
                     throw common_chat_msg_partial_exception("JSON arg_value detected. Waiting for more tokens for validations.");
                 }
                 if (builder.try_consume_literal("</arg_value>") && value_json->healing_marker.marker.empty()) {
