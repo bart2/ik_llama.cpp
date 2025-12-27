@@ -3,6 +3,10 @@
 #include "ggml-impl.h"
 #include "ggml-rpc.h"
 
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+#include "amx/amx.h"
+#endif
+
 #include <cassert>
 #include <climits>
 #include <cstdarg>
@@ -23,6 +27,9 @@
 #define IK_PRINT_TIMING 0
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+// Global flag to enable AMX at runtime
+static bool ggml_amx_enabled = false;
 
 // backend buffer type
 
@@ -826,6 +833,16 @@ GGML_CALL static void ggml_backend_cpu_free(ggml_backend_t backend) {
 }
 
 GGML_CALL static ggml_backend_buffer_type_t ggml_backend_cpu_get_default_buffer_type(ggml_backend_t backend) {
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+    if (ggml_amx_enabled) {
+        ggml_backend_buffer_type_t amx_buft = ggml_backend_amx_buffer_type();
+        if (amx_buft != nullptr) {
+            return amx_buft;
+        }
+        // If AMX initialization failed, fall back to standard CPU buffer type
+        fprintf(stderr, "warning: AMX was requested but failed to initialize, using standard CPU buffer\n");
+    }
+#endif
     return ggml_backend_cpu_buffer_type();
 
     GGML_UNUSED(backend);
@@ -992,6 +1009,10 @@ void ggml_backend_cpu_set_abort_callback(ggml_backend_t backend_cpu, ggml_abort_
     struct ggml_backend_cpu_context * ctx = (struct ggml_backend_cpu_context *)backend_cpu->context;
     ctx->abort_callback = abort_callback;
     ctx->abort_callback_data = abort_callback_data;
+}
+
+void ggml_backend_cpu_set_amx(bool enable) {
+    ggml_amx_enabled = enable;
 }
 
 GGML_CALL ggml_backend_buffer_t ggml_backend_cpu_buffer_from_ptr(void * ptr, size_t size) {

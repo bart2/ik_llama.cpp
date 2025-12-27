@@ -1444,6 +1444,10 @@ bool gpt_params_find_arg(int argc, char ** argv, const std::string & arg, gpt_pa
         params.scheduler_async = true;
         return true;
     }
+    if (arg == "--amx") {
+        params.use_amx = true;
+        return true;
+    }
     if (arg == "-smf16" || arg == "--split-mode-f16") {
         params.split_mode_f16 = true;
         return true;
@@ -3178,6 +3182,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.split_mode_graph_scheduling = params.split_mode_graph_scheduling;
     cparams.split_mode_f16    = params.split_mode_f16;
     cparams.scheduler_async   = params.scheduler_async;
+    cparams.use_amx           = params.use_amx;
     cparams.min_experts       = params.min_experts;
     cparams.thresh_experts    = params.thresh_experts;
     cparams.only_active_experts = params.only_active_exps;

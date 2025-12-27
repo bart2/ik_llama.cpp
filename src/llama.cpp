@@ -4348,6 +4348,7 @@ struct llama_context * llama_new_context_with_model(
     cparams.split_mode_graph_scheduling = params.split_mode_graph_scheduling;
     cparams.split_mode_f16   = params.split_mode_f16;
     cparams.scheduler_async  = params.scheduler_async;
+    cparams.use_amx          = params.use_amx;
     cparams.min_experts      = params.min_experts;
     cparams.thresh_experts   = params.thresh_experts;
     cparams.cuda_params      = params.cuda_params;
@@ -4637,6 +4638,7 @@ struct llama_context * llama_new_context_with_model(
             llama_free(ctx);
             return nullptr;
         }
+        ggml_backend_cpu_set_amx(cparams.use_amx);
         ctx->backends.push_back(ctx->backend_cpu);
 
         if (!llama_kv_cache_init(ctx->kv_self, ctx, type_k, type_v, kv_size, cparams.offload_kqv)) {
