@@ -1400,6 +1400,18 @@ elseif (CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR CMAKE_GENERATOR_PLATFORM_LW
         if (GGML_AVX512_BF16)
             list(APPEND ARCH_FLAGS -mavx512bf16)
         endif()
+        if (GGML_AMX_TILE)
+            list(APPEND ARCH_FLAGS -mamx-tile)
+            add_compile_definitions(GGML_AMX_TILE=1)
+        endif()
+        if (GGML_AMX_INT8)
+            list(APPEND ARCH_FLAGS -mamx-int8)
+            add_compile_definitions(GGML_AMX_INT8=1)
+        endif()
+        if (GGML_AMX_BF16)
+            list(APPEND ARCH_FLAGS -mamx-bf16)
+            add_compile_definitions(GGML_AMX_BF16=1)
+        endif()
     endif()
 elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ppc64")
     message(STATUS "PowerPC detected")
@@ -1529,6 +1541,7 @@ add_library(ggml
             ${GGML_SOURCES_IQK}       ${GGML_HEADERS_IQK}
             ${GGML_SOURCES_CANN}      ${GGML_HEADERS_CANN}
             ggml-aarch64.c            ggml-aarch64.h
+            ggml-cpu/amx/mmq.cpp
             )
 
 if (EMSCRIPTEN)
@@ -1539,6 +1552,7 @@ target_compile_definitions(ggml PUBLIC  ${GGML_CDEF_PUBLIC})
 target_compile_definitions(ggml PRIVATE $<$<CONFIG:Release>:NDEBUG>)
 target_include_directories(ggml PUBLIC ../include)
 target_include_directories(ggml PRIVATE . ${GGML_EXTRA_INCLUDES})
+target_include_directories(ggml PRIVATE ggml-cpu)
 target_link_directories(ggml PRIVATE ${GGML_EXTRA_LIBDIRS})
 target_compile_features   (ggml PRIVATE c_std_11) # don't bump
 

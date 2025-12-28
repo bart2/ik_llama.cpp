@@ -16103,6 +16103,37 @@ static int ggml_compute_forward_mul_mat(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
+    // AMX acceleration - check at compile time and runtime
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+    static int amx_available = -1;  // -1 = unknown, 0 = no, 1 = yes
+    if (amx_available < 0) {
+        extern bool ggml_amx_is_available(void);
+        extern bool ggml_amx_supports_type(enum ggml_type type);
+        extern void ggml_amx_mul_mat(const struct ggml_tensor * src0,
+                                     const struct ggml_tensor * src1,
+                                     struct ggml_tensor * dst,
+                                     const struct ggml_compute_params * params);
+        amx_available = ggml_cpu_has_amx_int8() && ggml_amx_is_available();
+        if (amx_available) {
+            fprintf(stderr, "[AMX] AMX acceleration enabled\n");
+        }
+    }
+
+    if (amx_available) {
+        extern bool ggml_amx_supports_type(enum ggml_type type);
+        if (ggml_amx_supports_type(src0->type)) {
+            fprintf(stderr, "[AMX] Using AMX for MUL_MAT (%s, type=%s)\n",
+                    dst->name, ggml_type_name(src0->type));
+            extern void ggml_amx_mul_mat(const struct ggml_tensor * src0,
+                                         const struct ggml_tensor * src1,
+                                         struct ggml_tensor * dst,
+                                         const struct ggml_compute_params * params);
+            ggml_amx_mul_mat(src0, src1, dst, params);
+            return node_n;
+        }
+    }
+#endif
+
 #if GGML_USE_IQK_MULMAT
     if (ith == 0) {
         static bool first_time = true;
@@ -28560,6 +28591,30 @@ int ggml_cpu_has_avx512_vnni(void) {
 
 int ggml_cpu_has_avx512_bf16(void) {
 #if defined(__AVX512BF16__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_amx_tile(void) {
+#if defined(GGML_AMX_TILE)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_amx_int8(void) {
+#if defined(GGML_AMX_INT8)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_amx_bf16(void) {
+#if defined(GGML_AMX_BF16)
     return 1;
 #else
     return 0;
