@@ -757,6 +757,14 @@ GGML_CALL static bool ggml_backend_cpu_buffer_type_is_host(ggml_backend_buffer_t
 }
 
 GGML_CALL ggml_backend_buffer_type_t ggml_backend_cpu_buffer_type(void) {
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
+    // Try to return AMX buffer type if available
+    ggml_backend_buffer_type_t amx_buft = ggml_backend_amx_buffer_type();
+    if (amx_buft != nullptr) {
+        fprintf(stderr, "AMX: returning AMX buffer type for CPU backend\n");
+        return amx_buft;
+    }
+#endif
     static struct ggml_backend_buffer_type ggml_backend_cpu_buffer_type = {
         /* .iface = */ {
             /* .get_name         = */ ggml_backend_cpu_buffer_type_get_name,
