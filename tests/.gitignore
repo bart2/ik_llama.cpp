@@ -2,3 +2,5 @@
 !*.*
 *.o
 ggml-common.h
+CTestTestfile.cmake
+cmake_install.cmake
