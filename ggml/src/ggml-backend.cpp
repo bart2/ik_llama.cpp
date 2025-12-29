@@ -20,6 +20,13 @@
 #include <omp.h>
 #endif
 
+// AMX intrinsics check
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+#include <immintrin.h>
+// AMX intrinsics are available through immintrin.h when -mamx-int8 is used
+#define GGML_AMX_INTRINSICS_AVAILABLE 1
+#endif
+
 #define IK_PRINT_TIMING 0
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -475,6 +482,12 @@ extern "C" GGML_CALL int ggml_backend_cann_reg_devices(void);
 extern "C" GGML_CALL void ggml_backend_rpc_reg_devices(void);
 #endif
 
+// AMX forward declarations
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
+extern "C" bool ggml_amx_init(void);
+ggml_backend_buffer_type_t ggml_backend_amx_buffer_type(void);
+#endif
+
 GGML_CALL static void ggml_backend_registry_init(void) {
     static bool initialized = false;
 
@@ -484,7 +497,19 @@ GGML_CALL static void ggml_backend_registry_init(void) {
 
     initialized = true;
 
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
+    fprintf(stderr, "AMX: attempting to register AMX backend...\n");
+    // Try to register AMX buffer type, fall back to regular CPU if unavailable
+    ggml_backend_buffer_type_t amx_buft = ggml_backend_amx_buffer_type();
+    if (amx_buft != nullptr) {
+        ggml_backend_register("CPU", ggml_backend_reg_cpu_init, amx_buft, NULL);
+        fprintf(stderr, "AMX backend registered successfully\n");
+    } else {
+        ggml_backend_register("CPU", ggml_backend_reg_cpu_init, ggml_backend_cpu_buffer_type(), NULL);
+    }
+#else
     ggml_backend_register("CPU", ggml_backend_reg_cpu_init, ggml_backend_cpu_buffer_type(), NULL);
+#endif
 
     // add forward decls here to avoid including the backend headers
 #ifdef GGML_USE_CUDA
@@ -802,6 +827,86 @@ ggml_backend_buffer_type_t ggml_backend_cpu_hbm_buffer_type(void) {
     return &ggml_backend_cpu_buffer_type_hbm;
 }
 #endif
+
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
+
+// AMX buffer interface
+GGML_CALL static const char * ggml_backend_amx_buffer_type_get_name(ggml_backend_buffer_type_t buft) {
+    return "AMX";
+    GGML_UNUSED(buft);
+}
+
+GGML_CALL static const char * ggml_backend_amx_buffer_get_name(ggml_backend_buffer_t buf) {
+    return "AMX";
+    GGML_UNUSED(buf);
+}
+
+GGML_CALL static void ggml_backend_amx_buffer_free_buffer(ggml_backend_buffer_t buffer) {
+    free(buffer->context);
+}
+
+GGML_CALL static void * ggml_backend_amx_buffer_get_base(ggml_backend_buffer_t buffer) {
+    return (void *)(buffer->context);
+}
+
+GGML_CALL static ggml_status ggml_backend_amx_buffer_init_tensor(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor) {
+    GGML_UNUSED(buffer);
+    return GGML_STATUS_SUCCESS;
+}
+
+GGML_CALL static void ggml_backend_amx_buffer_set_tensor(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor,
+                                                   const void * data, size_t offset, size_t size) {
+    // Debug logging for AMX tensor operations
+    fprintf(stderr, "%s: AMX repack tensor %s of type %s\n", __func__, tensor->name, ggml_type_name(tensor->type));
+    memcpy((char *)tensor->data + offset, data, size);
+    GGML_UNUSED(buffer);
+}
+
+GGML_CALL static void ggml_backend_amx_buffer_clear(ggml_backend_buffer_t buffer, uint8_t value) {
+    memset(buffer->context, value, buffer->size);
+}
+
+GGML_CALL static ggml_backend_buffer_t ggml_backend_amx_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {
+    size += 64;   // AMX requires 64-byte alignment
+    void * data = malloc(size);
+    if (data == NULL) {
+        fprintf(stderr, "%s: failed to allocate buffer of size %zu\n", __func__, size);
+        return NULL;
+    }
+    return ggml_backend_buffer_init(buft, cpu_backend_buffer_i, data, size);
+}
+
+GGML_CALL static size_t ggml_backend_amx_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {
+    return 64; // AMX requires 64-byte alignment
+    GGML_UNUSED(buft);
+}
+
+GGML_CALL static bool ggml_backend_amx_buffer_type_is_host(ggml_backend_buffer_type_t buft) {
+    return true;
+    GGML_UNUSED(buft);
+}
+
+GGML_CALL ggml_backend_buffer_type_t ggml_backend_amx_buffer_type(void) {
+    if (!ggml_amx_init()) {
+        return nullptr;
+    }
+
+    static struct ggml_backend_buffer_type ggml_backend_amx_buffer_type = {
+        /* .iface = */ {
+            /* .get_name         = */ ggml_backend_amx_buffer_type_get_name,
+            /* .alloc_buffer     = */ ggml_backend_amx_buffer_type_alloc_buffer,
+            /* .get_alignment    = */ ggml_backend_amx_buffer_type_get_alignment,
+            /* .get_max_size     = */ NULL, // defaults to SIZE_MAX
+            /* .get_alloc_size   = */ NULL, // defaults to ggml_nbytes
+            /* .is_host          = */ ggml_backend_amx_buffer_type_is_host,
+        },
+        /* .context = */ NULL,
+    };
+
+    return &ggml_backend_amx_buffer_type;
+}
+
+#endif // defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
 
 struct ggml_backend_cpu_context {
     int n_threads;

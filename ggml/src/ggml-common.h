@@ -762,6 +762,37 @@ typedef struct {
 static_assert(sizeof(block_iq5_ks_r4) == 4*sizeof(block_iq5_ks), "wrong iq5_ks_r4 block size/padding");
 
 
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+
+// AMX tile configuration constants
+#define AMX_TILE_M 16
+#define AMX_TILE_N 16
+#define AMX_TILE_K 32
+#define AMX_VNNI_BLK 4
+
+#define AMX_BLK_SIZE 32
+
+// AMX tile register indices
+#define AMX_TMM0 0
+#define AMX_TMM1 1
+#define AMX_TMM2 2
+#define AMX_TMM3 3
+#define AMX_TMM4 4
+#define AMX_TMM5 5
+#define AMX_TMM6 6
+#define AMX_TMM7 7
+
+// AMX tile configuration structure
+struct ggml_amx_tile_config {
+    uint8_t palette_id;
+    uint8_t start_row;
+    uint8_t reserved_0[14];
+    uint16_t colsb[16];
+    uint8_t rows[16];
+};
+
+#endif // defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+
 #endif // GGML_COMMON_DECL
 #endif // GGML_COMMON_DECL
 

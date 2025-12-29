@@ -18,6 +18,17 @@
 #include "iqk/iqk_config.h"
 #endif
 
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
+#include <immintrin.h>
+// AMX intrinsics are available through immintrin.h when -mamx-int8 is used
+// (Clang 14+ and GCC 12+ support this)
+#define GGML_AMX_INTRINSICS_AVAILABLE 1
+#if defined(__linux__)
+#define ARCH_REQ_XCOMP_PERM 0x1023
+#define XFEATURE_XTILEDATA  18
+#endif
+#endif
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
@@ -57,6 +68,87 @@ int ggml_sve_cnt_b = 0;
 #if defined(__ARM_FEATURE_SVE) || defined(__ARM_FEATURE_MATMUL_INT8)
 #undef GGML_USE_LLAMAFILE
 #endif
+
+#if defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
+
+// AMX runtime initialization
+bool ggml_amx_init(void) {
+    static bool amx_initialized = false;
+    static bool amx_available = false;
+
+    fprintf(stderr, "DEBUG: ggml_amx_init() called, amx_initialized=%d\n", amx_initialized);
+
+    if (amx_initialized) {
+        fprintf(stderr, "DEBUG: ggml_amx_init() returning cached result: %d\n", amx_available);
+        return amx_available;
+    }
+
+    amx_initialized = true;
+
+#if defined(__linux__)
+    fprintf(stderr, "DEBUG: attempting AMX syscall (ARCH_REQ_XCOMP_PERM=%d, XFEATURE_XTILEDATA=%d)\n",
+            ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA);
+    long ret = syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA);
+    fprintf(stderr, "DEBUG: syscall returned %ld\n", ret);
+    if (ret) {
+        fprintf(stderr, "AMX is not available on this system (syscall failed)\n");
+        return false;
+    }
+    amx_available = true;
+    fprintf(stderr, "AMX initialized successfully\n");
+#elif defined(_WIN32)
+    amx_available = true;
+    fprintf(stderr, "AMX initialized successfully\n");
+#else
+    fprintf(stderr, "AMX is not supported on this platform\n");
+    return false;
+#endif
+
+    return amx_available;
+}
+
+// AMX tile configuration initialization
+static void ggml_amx_tile_config_init(void) {
+    static _Thread_local bool is_first_time = true;
+
+    if (!is_first_time) {
+        return;
+    }
+
+    static _Thread_local struct ggml_amx_tile_config tc = {0};
+    struct ggml_amx_tile_config current_tc;
+    _tile_storeconfig(&current_tc);
+
+    // Load only when config changes
+    if (tc.palette_id == 0 ||
+        (memcmp(&current_tc.colsb, &tc.colsb, sizeof(uint16_t) * 8) != 0 &&
+         memcmp(&current_tc.rows, &tc.rows, sizeof(uint8_t) * 8) != 0)) {
+
+        tc.palette_id = 1;
+        tc.start_row = 0;
+
+        // Configure tiles for 16-16-32 pattern
+        // TMM0, TMM1: B matrix (8x64 after VNNI packing)
+        tc.rows[AMX_TMM0] = 8;  tc.colsb[AMX_TMM0] = 64;
+        tc.rows[AMX_TMM1] = 8;  tc.colsb[AMX_TMM1] = 64;
+
+        // TMM2, TMM3: A matrix (16x32)
+        tc.rows[AMX_TMM2] = 16; tc.colsb[AMX_TMM2] = 32;
+        tc.rows[AMX_TMM3] = 16; tc.colsb[AMX_TMM3] = 32;
+
+        // TMM4-TMM7: C matrix (16x64 accumulator)
+        tc.rows[AMX_TMM4] = 16; tc.colsb[AMX_TMM4] = 64;
+        tc.rows[AMX_TMM5] = 16; tc.colsb[AMX_TMM5] = 64;
+        tc.rows[AMX_TMM6] = 16; tc.colsb[AMX_TMM6] = 64;
+        tc.rows[AMX_TMM7] = 16; tc.colsb[AMX_TMM7] = 64;
+
+        _tile_loadconfig(&tc);
+    }
+
+    is_first_time = false;
+}
+
+#endif // defined(__AMX_INT8__) && defined(__AVX512VNNI__) && defined(GGML_AMX_INTRINSICS_AVAILABLE)
 
 #ifdef GGML_USE_LLAMAFILE
 #include <llamafile/sgemm.h>
@@ -28560,6 +28652,22 @@ int ggml_cpu_has_avx512_vnni(void) {
 
 int ggml_cpu_has_avx512_bf16(void) {
 #if defined(__AVX512BF16__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_amx_tile(void) {
+#if defined(__AMX_INT8__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_amx_int8(void) {
+#if defined(__AMX_INT8__)
     return 1;
 #else
     return 0;
