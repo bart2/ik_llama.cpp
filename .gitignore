@@ -19,6 +19,13 @@
 *.so
 *.swp
 *.tmp
+*.cmake
+*CMakeFiles*
+Makefile
+CMakeCache.txt
+DartConfiguration.tcl
+llama.pc
+
 
 # IDE / OS
 
